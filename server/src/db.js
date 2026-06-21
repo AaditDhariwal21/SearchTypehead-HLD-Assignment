@@ -5,14 +5,20 @@
 // limitation: no callback/promise plumbing, queries are simple function calls, and the logic
 // stays linear and easy to read in a viva. There is no separate DB server to run.
 import Database from 'better-sqlite3';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// DB file lives alongside the seed CSV under server/data/.
-const DB_PATH = join(__dirname, '..', 'data', 'app.db');
+// DB file lives under server/data/.
+const DATA_DIR = join(__dirname, '..', 'data');
+const DB_PATH = join(DATA_DIR, 'app.db');
+
+// better-sqlite3 will NOT create missing parent directories — if data/ doesn't
+// exist it fails with SQLITE_CANTOPEN. Ensure it exists first (idempotent), so a
+// fresh checkout or a container with no data/ folder just works.
+mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 
