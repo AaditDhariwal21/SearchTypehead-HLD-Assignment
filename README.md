@@ -447,9 +447,22 @@ Example:
 
 ## Screenshots
 
-The Popular-mode typeahead returning ranked search-query suggestions for a prefix:
+**Popular mode** — typeahead returning ranked search-query suggestions for a prefix:
 
-![Search Typeahead UI](docs/screenshots/typeahead.png)
+![Popular-mode typeahead](docs/screenshots/typeahead.png)
 
-> Add your screenshot at `docs/screenshots/typeahead.png` (and any others), or
-> record a short demo clip.
+**Trending mode** — same prefix, recency-aware ranking (recently-searched queries boosted):
+
+![Trending-mode typeahead](docs/screenshots/trending.png)
+
+**`GET /metrics`** — p50/p95/p99 latency, per-node + overall cache hit rate, and batch write-reduction:
+
+![Metrics endpoint](docs/screenshots/metrics.png)
+
+**`GET /cache/debug`** — which node owns a prefix and whether it's a hit/miss (non-mutating):
+
+![Cache debug endpoint](docs/screenshots/cache-debug.png)
+
+**Structured logs** — consistent-hash routing, cache hit/miss, and batch-write flushes:
+
+![Structured logs](docs/screenshots/logs-hashring.png)
