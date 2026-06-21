@@ -28,12 +28,12 @@ Run these from the repo root (the folder with `docker-compose.yml`).
 | `docker compose down` | Stops and removes the containers and the network. Your SQLite DB survives (it lives on disk via the bind mount). |
 | `docker compose ps` | Lists the containers and their health status. |
 | `docker compose logs -f backend` | Follows the backend logs (Ctrl-C to stop following). |
-| `docker compose exec backend npm run seed` | Seeds the DB **inside** the container (do this once after the first `up`; needs `server/data/queries.csv` present). |
+| `docker compose exec backend npm run seed` | Seeds the DB **inside** the container (do this once after the first `up`; needs the ORCAS file at `server/data/orcas.tsv.gz` — see README "Dataset"). |
 | `docker compose restart backend` | Restarts just the backend. |
 
 **First-time sequence:**
 ```bash
-# 1. put your CSV at server/data/queries.csv
+# 1. download ORCAS to server/data/orcas.tsv.gz (see README "Dataset")
 docker compose up --build -d          # start everything in the background
 docker compose exec backend npm run seed   # load the dataset
 cd client && npm run dev              # start the frontend on your laptop

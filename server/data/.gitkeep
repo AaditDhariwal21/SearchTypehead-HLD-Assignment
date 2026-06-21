@@ -1,2 +1,3 @@
-# Place the seed CSV here as queries.csv  (columns: query,count)
-# This folder is tracked; the CSV itself and the generated app.db are gitignored.
+# Place the ORCAS dataset here as orcas.tsv.gz (see README "Dataset" for the
+# download link). This folder is tracked; the dataset and the generated app.db
+# are gitignored.

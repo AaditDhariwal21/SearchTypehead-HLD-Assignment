@@ -105,9 +105,9 @@ invalidated across the nodes that own them.
 │       └── hooks/useDebounce.js
 └── server/
     ├── Dockerfile              node:22-bookworm-slim (glibc, for better-sqlite3)
-    ├── data/queries.csv        dataset (150k rows)
+    ├── data/                   ORCAS dataset goes here (downloaded, not committed)
     ├── scripts/
-    │   ├── seed.js             CSV -> SQLite loader (+ case-collision merge)
+    │   ├── seed.js             ORCAS TSV -> SQLite loader (streaming + aggregation)
     │   └── benchmark.js        drives traffic, prints the /metrics report
     └── src/
         ├── index.js            app wiring, flusher start, graceful shutdown
@@ -168,19 +168,27 @@ localhost defaults, so the **same code** runs in Docker and locally.
 
 ## Dataset (source & loading)
 
-- **Source:** Wikipedia article titles with view/popularity counts —
-  150,000 rows of `{query, count}`, counts ranging ~4 to ~22,600.
-- **Location:** `server/data/queries.csv`, header `query,count`. Committed to the
-  repo so the project is self-contained.
+- **Source:** **ORCAS** — *Open Resource for Click Analysis in Search* (MS MARCO):
+  real, anonymized web-search queries with their clicked documents. We use the
+  query text (not Wikipedia article titles), so suggestions look like genuine
+  searches ("what is love", "how to ...").
+- **Download:** <https://msmarco.z22.web.core.windows.net/msmarcoranking/orcas.tsv.gz>
+  (~330 MB gz, 18.8M rows; tab-separated `qid, query, did, url`). Place it at
+  **`server/data/orcas.tsv.gz`** — it is **not** committed (too large).
+- **`count` semantics:** ORCAS has no per-query count; each row is one clicked
+  query→document pair. We aggregate by query and use the **number of
+  click-connections** as `count` (a popularity proxy — lower/flatter than page
+  views, but a true search-query signal).
 - **Loading:** `npm run seed` (or `docker compose exec backend npm run seed`).
   The seed script:
-  - normalizes each title to a lowercased/trimmed `term` (matched + indexed) while
-    keeping the original casing in `display_term` (shown in the UI);
-  - **merges case-collisions** — rows that differ only by casing collapse to one
-    `term`; their counts are **summed** (not overwritten), keeping the
-    higher-count casing for display;
+  - **streams** the gzip directly (never unzips the ~2 GB file to disk/memory);
+  - processes the first **`MAX_LINES`** rows (env, default 1,000,000 →
+    ~550k distinct queries; raise it for richer counts if you have the RAM);
+  - normalizes each query to a lowercased/trimmed `term` (matched + indexed),
+    keeping the original casing in `display_term`; queries differing only by
+    casing collapse to one `term` and their counts **sum**;
   - is **idempotent** (wipes the table first, so re-seeding never double-counts);
-  - prints rows read, distinct terms, **collisions merged**, and count range.
+  - prints rows read, distinct queries, and count range.
 
 The schema (`server/src/schema.sql`):
 ```sql
@@ -208,16 +216,17 @@ Up to 10 suggestions whose term starts with `q`.
 - Empty / missing `q` → `[]` (200). No matches → `[]` (200). **Never errors.**
 
 ```bash
-curl "http://localhost:3001/suggest?q=you"
+curl "http://localhost:3001/suggest?q=how%20to"
 ```
 ```json
 [
-  { "term": "YouTube", "count": 22609 },
-  { "term": "Young Sheldon", "count": 129 },
-  { "term": "You (TV series)", "count": 115 }
+  { "term": "how to screenshot on mac", "count": 9 },
+  { "term": "how to tie a tie", "count": 7 },
+  { "term": "how to lose weight", "count": 6 }
 ]
 ```
-`term` is the original-casing display string; `count` is the all-time popularity.
+`term` is the display string; `count` is the popularity (ORCAS click-connections).
+(Illustrative — exact rows/counts depend on your seed and `MAX_LINES`.)
 
 ### `POST /search`
 Body: `{ "query": "<term>" }`. Records a search (buffered → batched into SQLite:
@@ -278,7 +287,7 @@ curl "http://localhost:3001/metrics"
   ```
   A term searched recently is boosted; an old one decays. Two guards keep it sane:
   - **Age is capped at 7 days**, which puts a *floor* (~0.8%) on the decay so a
-    very popular but stale term (e.g. YouTube) is demoted, **not erased**.
+    very popular but stale query is demoted, **not erased**.
   - **Never-searched rows** (`last_searched_at IS NULL`) are treated as
     "max-age stale" rather than infinitely old, so high-count seeded terms still
     appear.
@@ -419,7 +428,7 @@ Example:
 
 ## Screenshots
 
-The Popular-mode typeahead returning ranked Wikipedia titles for the prefix `you`:
+The Popular-mode typeahead returning ranked search-query suggestions for a prefix:
 
 ![Search Typeahead UI](docs/screenshots/typeahead.png)
 

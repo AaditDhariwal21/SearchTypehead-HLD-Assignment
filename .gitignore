@@ -6,5 +6,7 @@ dist/
 *.db-shm
 *.db-wal
 
-# NOTE: server/data/queries.csv IS committed (3 MB) so the repo is self-contained
-# and a grader can seed immediately after cloning.
+# ORCAS dataset is large (~330 MB gz) — NOT committed. Download it and place at
+# server/data/orcas.tsv.gz (see README "Dataset"), then run `npm run seed`.
+server/data/orcas.tsv
+server/data/orcas.tsv.gz

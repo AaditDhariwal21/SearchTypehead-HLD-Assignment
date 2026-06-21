@@ -1,8 +1,8 @@
 // Single shared SQLite connection for the whole process.
 //
 // better-sqlite3 is synchronous by design. For a local, read-heavy demo at this
-// scale (~150k rows, single process) that is a feature, not a limitation: no
-// callback/promise plumbing, queries are simple function calls, and the logic
+// scale (a few hundred thousand rows, single process) that is a feature, not a
+// limitation: no callback/promise plumbing, queries are simple function calls, and the logic
 // stays linear and easy to read in a viva. There is no separate DB server to run.
 import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
