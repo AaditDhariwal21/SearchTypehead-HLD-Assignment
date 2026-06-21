@@ -4,21 +4,23 @@
 //
 // DATASET: ORCAS (Open Resource for Click Analysis in Search), from MS MARCO.
 //   Download: https://msmarco.z22.web.core.windows.net/msmarcoranking/orcas.tsv.gz
-//   Place it at server/data/orcas.tsv.gz (gzip is read directly — no need to
-//   unzip the ~2 GB file). A plain orcas.tsv also works.
+//   Place it at server/data/orcas.tsv.gz (gzip is read directly — no unzip needed).
 //   Format: tab-separated, columns = qid, query, did, url. We only use `query`.
 //
-// COUNT semantics: ORCAS has no explicit per-query count — each row is one
-// clicked query->document pair. We aggregate by query and use the NUMBER OF
-// CLICK-CONNECTIONS as the popularity `count` (more clicked docs => more popular
-// query). It's a proxy: counts are lower/flatter than Wikipedia page-views, but
-// it's a real search-query signal, which is the point of switching to ORCAS.
+// COUNT semantics: ORCAS has no explicit per-query count — each row is one clicked
+// query->document pair. We aggregate by query and use the NUMBER OF CLICK-
+// CONNECTIONS as the popularity `count` (more clicked docs => more popular query).
 //
-// SIZE: the full file is 18.8M rows / ~10M distinct queries — too big to hold in
-// memory. We STREAM it and process only the first MAX_LINES rows (env, default
-// 1,000,000 -> ~550k distinct queries, comfortably over the 100k requirement).
-// Raise MAX_LINES if you have the RAM and want popular queries to accrue higher
-// counts. This is a SEPARATE script, never run in the request path.
+// SAMPLING (important): the full file is 18.8M rows / ~10M distinct queries. We
+// must stream the WHOLE file (so counts are accurate and the sample spans the
+// entire alphabet), but we keep only a uniform SAMPLE of queries to bound the DB
+// size. The sample is chosen by a deterministic hash of the query, so:
+//   - it's uniform across all queries (NOT a biased contiguous slice — an earlier
+//     "first N rows" approach loaded only queries near the start of the file, so
+//     common queries like "what is ..." were missing entirely);
+//   - every kept query's count is exact (all its rows are counted).
+// SAMPLE_MOD (env, default 10) keeps ~1/10 of queries -> ~1M distinct, ~150 MB DB.
+// Set SAMPLE_MOD=1 to load EVERYTHING (~10M queries, ~1.5 GB DB, slower).
 import { createReadStream, existsSync } from 'node:fs';
 import { createGunzip } from 'node:zlib';
 import { createInterface } from 'node:readline';
@@ -29,10 +31,21 @@ import db from '../src/db.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, '..', 'data');
 
-// Process at most this many input rows (0 = no cap — only if you have the RAM).
-const MAX_LINES = Number(process.env.MAX_LINES ?? 1_000_000);
+// Keep 1 in SAMPLE_MOD distinct queries (uniform). 1 = keep all.
+const SAMPLE_MOD = Math.max(1, Number(process.env.SAMPLE_MOD ?? 10));
+const CHUNK = 50_000; // rows per write transaction
 
-// Pick the input file: explicit env override, else gzip, else plain TSV.
+// Deterministic FNV-1a hash, used only to decide sampling — same query always
+// gets the same keep/skip verdict, so all of a kept query's rows are counted.
+function hash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
 const candidates = [
   process.env.ORCAS_FILE,
   join(DATA_DIR, 'orcas.tsv.gz'),
@@ -44,52 +57,49 @@ if (!inputPath) {
   console.error('[seed] ORCAS file not found. Expected one of:');
   console.error(`         ${join(DATA_DIR, 'orcas.tsv.gz')}`);
   console.error(`         ${join(DATA_DIR, 'orcas.tsv')}`);
-  console.error('[seed] Download it with:');
+  console.error('[seed] Download it from:');
   console.error('         https://msmarco.z22.web.core.windows.net/msmarcoranking/orcas.tsv.gz');
-  console.error('[seed] then place it at server/data/orcas.tsv.gz and re-run `npm run seed`.');
+  console.error('[seed] place it at server/data/orcas.tsv.gz and re-run `npm run seed`.');
   process.exit(1);
 }
 
-const insert = db.prepare(`
+// Insert-or-increment: each click-connection for a query bumps its count by 1.
+const upsert = db.prepare(`
   INSERT INTO queries (term, display_term, count, last_searched_at)
-  VALUES (@term, @displayTerm, @count, NULL)
+  VALUES (?, ?, 1, NULL)
+  ON CONFLICT(term) DO UPDATE SET count = count + 1
 `);
+const writeChunk = db.transaction((rows) => {
+  for (const [term, displayTerm] of rows) upsert.run(term, displayTerm);
+});
 
-// All inserts in one transaction (fast bulk load). Wipe first so re-seeding is
-// idempotent and never double-counts.
-const seedAll = db.transaction((rows) => {
+async function run() {
+  const start = Date.now();
+  console.log(`[seed] reading ${inputPath}`);
+  console.log(`[seed] keeping ~1/${SAMPLE_MOD} of queries (set SAMPLE_MOD=1 to load all)`);
+
+  // Fresh start so re-seeding never double-counts.
   db.exec('DELETE FROM queries');
   try {
     db.exec("DELETE FROM sqlite_sequence WHERE name = 'queries'");
   } catch {
     // sqlite_sequence only exists after the first AUTOINCREMENT insert; ignore.
   }
-  for (const row of rows) insert.run(row);
-});
 
-async function run() {
-  const start = Date.now();
-  console.log(`[seed] reading ${inputPath}`);
-  if (MAX_LINES > 0) console.log(`[seed] processing first ${MAX_LINES.toLocaleString()} rows (set MAX_LINES to change)`);
-
-  // Stream the file; gunzip on the fly if it's a .gz so we never materialize the
-  // full ~2 GB uncompressed file on disk or in memory.
   let input = createReadStream(inputPath);
   if (inputPath.endsWith('.gz')) input = input.pipe(createGunzip());
   const rl = createInterface({ input, crlfDelay: Infinity });
 
-  // Aggregate query -> { displayTerm, count }. Key is the normalized term;
-  // queries that differ only by casing collapse here and their counts SUM (the
-  // same case-collision merge we always had — now it's just natural aggregation).
-  const agg = new Map();
   let lines = 0;
+  let kept = 0;
   let skipped = 0;
+  let chunk = [];
 
   for await (const line of rl) {
-    if (MAX_LINES > 0 && lines >= MAX_LINES) break;
     lines++;
+    if (lines % 2_000_000 === 0) console.log(`[seed]   ...${(lines / 1e6).toFixed(0)}M rows read`);
 
-    // Extract column index 1 (`query`) cheaply: it's between the 1st and 2nd tab.
+    // `query` is column index 1: between the 1st and 2nd tab.
     const tab1 = line.indexOf('\t');
     if (tab1 === -1) {
       skipped++;
@@ -103,33 +113,30 @@ async function run() {
     }
 
     const term = query.toLowerCase();
-    const cur = agg.get(term);
-    if (cur) {
-      cur.count += 1;
-    } else {
-      agg.set(term, { displayTerm: query, count: 1 });
+    // Uniform sample by query hash (same query -> same verdict every time).
+    if (SAMPLE_MOD > 1 && hash(term) % SAMPLE_MOD !== 0) continue;
+
+    chunk.push([term, query]);
+    kept++;
+    if (chunk.length >= CHUNK) {
+      writeChunk(chunk);
+      chunk = [];
     }
   }
+  if (chunk.length) writeChunk(chunk);
   rl.close();
   input.destroy();
 
-  const capped = MAX_LINES > 0 && lines >= MAX_LINES;
-
-  const rows = [];
-  for (const [term, { displayTerm, count }] of agg) {
-    rows.push({ term, displayTerm, count });
-  }
-
-  seedAll(rows);
-
+  const distinct = db.prepare('SELECT COUNT(*) AS n FROM queries').get().n;
   const range = db.prepare('SELECT MIN(count) AS lo, MAX(count) AS hi FROM queries').get();
   const ms = Date.now() - start;
   console.log('[seed] done:');
-  console.log(`         rows read          : ${lines.toLocaleString()}${capped ? ' (capped by MAX_LINES)' : ' (whole file)'}`);
-  console.log(`         rows skipped (bad) : ${skipped}`);
-  console.log(`         distinct queries   : ${rows.length.toLocaleString()}`);
-  console.log(`         count range        : ${range.lo} .. ${range.hi}`);
-  console.log(`         elapsed            : ${ms} ms`);
+  console.log(`         rows read           : ${lines.toLocaleString()}`);
+  console.log(`         rows skipped (bad)  : ${skipped}`);
+  console.log(`         click-rows kept     : ${kept.toLocaleString()}`);
+  console.log(`         distinct queries    : ${distinct.toLocaleString()}`);
+  console.log(`         count range         : ${range.lo} .. ${range.hi}`);
+  console.log(`         elapsed             : ${(ms / 1000).toFixed(1)} s`);
 }
 
 run().catch((err) => {
