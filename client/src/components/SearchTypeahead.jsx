@@ -3,6 +3,12 @@ import { useDebounce } from '../hooks/useDebounce.js';
 import './SearchTypeahead.css';
 
 const DEBOUNCE_MS = 300;
+// Don't query until at least this many characters are typed. WHY: 1–2 char
+// prefixes match a huge slice of the dataset (low information, expensive to rank)
+// and the user almost never wants results that early. Gating here means the
+// backend is never even hit for those — debounce + min-length together keep
+// /suggest traffic to meaningful queries only.
+const MIN_QUERY_LENGTH = 3;
 
 export default function SearchTypeahead() {
   const [query, setQuery] = useState('');
@@ -22,7 +28,8 @@ export default function SearchTypeahead() {
   // Fetch suggestions whenever the *debounced* query OR the mode changes
   // (switching Popular/Trending re-queries the current prefix).
   useEffect(() => {
-    if (!trimmed) {
+    // Below the minimum length: no fetch, no results (the dropdown stays hidden).
+    if (trimmed.length < MIN_QUERY_LENGTH) {
       setSuggestions([]);
       setLoading(false);
       return;
@@ -120,7 +127,8 @@ export default function SearchTypeahead() {
     }
   }
 
-  const showDropdown = isOpen && trimmed !== '';
+  // Only show the dropdown once the prefix is long enough to have queried.
+  const showDropdown = isOpen && trimmed.length >= MIN_QUERY_LENGTH;
 
   return (
     <div className="typeahead">
