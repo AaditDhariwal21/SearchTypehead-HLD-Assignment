@@ -31,7 +31,7 @@ the database with a 3-node Redis cache.
 
 ```mermaid
 flowchart TD
-    UI["React + Vite frontend<br/>(debounced typeahead, Popular/Trending toggle)"]
+    UI["React + Vite frontend<br/>(debounced + 3-char-min typeahead, Popular/Trending toggle)"]
 
     subgraph Backend["Express backend (Node.js)"]
         SUGGEST["GET /suggest?q=&mode="]
@@ -177,13 +177,16 @@ localhost defaults, so the **same code** runs in Docker and locally.
   **`server/data/orcas.tsv.gz`** — it is **not** committed (too large).
 - **`count` semantics:** ORCAS has no per-query count; each row is one clicked
   query→document pair. We aggregate by query and use the **number of
-  click-connections** as `count` (a popularity proxy — lower/flatter than page
-  views, but a true search-query signal).
+  click-connections** as `count` (a real popularity signal — counts range from 1
+  up to ~2000 for the most popular queries).
 - **Loading:** `npm run seed` (or `docker compose exec backend npm run seed`).
   The seed script:
   - **streams** the gzip directly (never unzips the ~2 GB file to disk/memory);
-  - processes the first **`MAX_LINES`** rows (env, default 1,000,000 →
-    ~550k distinct queries; raise it for richer counts if you have the RAM);
+  - keeps a **uniform sample** of queries — `1` in **`SAMPLE_MOD`** (env, default
+    `10` → ~1M distinct queries, ~150 MB DB). The sample is chosen by a
+    deterministic hash of the query, so it spans the **whole alphabet** (not a
+    biased contiguous slice) and every kept query's count is exact. Set
+    `SAMPLE_MOD=1` to load all ~10M queries (~1.5 GB DB);
   - normalizes each query to a lowercased/trimmed `term` (matched + indexed),
     keeping the original casing in `display_term`; queries differing only by
     casing collapse to one `term` and their counts **sum**;
@@ -226,7 +229,7 @@ curl "http://localhost:3001/suggest?q=how%20to"
 ]
 ```
 `term` is the display string; `count` is the popularity (ORCAS click-connections).
-(Illustrative — exact rows/counts depend on your seed and `MAX_LINES`.)
+(Illustrative — exact rows/counts depend on your seed and `SAMPLE_MOD`.)
 
 ### `POST /search`
 Body: `{ "query": "<term>" }`. Records a search (buffered → batched into SQLite:
@@ -401,6 +404,22 @@ volume** so the host's (Windows) binary can't shadow the container's Linux one.
 **11. SQLite WAL + `synchronous=NORMAL`.** Read-heavy workload; WAL lets readers and
 the writer proceed without blocking each other. *Trade-off:* the standard
 WAL durability profile (a crash can lose the last transaction, never corrupts).
+
+**12. SQLite file on a Docker named volume, not the bind mount.** The source code is
+bind-mounted for live edits, but the DB file (`DB_PATH=/dbdata/app.db`) lives on a
+named volume. *Why:* Docker Desktop's Windows/Mac bind mounts don't fully support
+the POSIX file locks SQLite needs, causing intermittent `SQLITE_CANTOPEN`/`IOERR`.
+A named volume is a real Linux filesystem with correct locking, and it persists
+across restarts. *Trade-off:* the DB isn't directly visible in the host folder
+(use `docker compose exec` to inspect it).
+
+**13. Two-layer client throttle: debounce + min-length.** The frontend debounces
+input by **300 ms** (one request per typing pause, not per keystroke) AND only
+queries once **3+ characters** are typed. *Why both:* debounce limits requests over
+*time*; the min-length limits them by *usefulness* — 1–2 char prefixes match a huge,
+low-information slice of the index and are the most expensive to rank, so we skip
+them entirely. Together they keep `/suggest` traffic to meaningful queries. *Trade-
+off:* no suggestions for very short prefixes (intended).
 
 ---
 
