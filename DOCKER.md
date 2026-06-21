@@ -25,7 +25,7 @@ Run these from the repo root (the folder with `docker-compose.yml`).
 |---|---|
 | `docker compose up --build` | Builds the backend image and starts backend + 3 Redis. Use `--build` after code/dependency or Dockerfile changes. Add `-d` to run detached (in the background). |
 | `docker compose up` | Same, but reuses the existing backend image (faster; no rebuild). |
-| `docker compose down` | Stops and removes the containers and the network. Your SQLite DB survives (it lives on disk via the bind mount). |
+| `docker compose down` | Stops and removes the containers and the network. Your SQLite DB **survives** (it lives on the `dbdata` named volume). `docker compose down -v` also removes the volume → you'd need to re-seed. |
 | `docker compose ps` | Lists the containers and their health status. |
 | `docker compose logs -f backend` | Follows the backend logs (Ctrl-C to stop following). |
 | `docker compose exec backend npm run seed` | Seeds the DB **inside** the container (do this once after the first `up`; needs the ORCAS file at `server/data/orcas.tsv.gz` — see README "Dataset"). |
@@ -75,6 +75,11 @@ which is the backend's published port — no frontend change needed.
    - **Backend logs `UNREACHABLE` for redis:** the backend started before Redis
      was ready. `depends_on: condition: service_healthy` should prevent this;
      if it persists, `docker compose restart backend`.
+   - **`SQLITE_CANTOPEN` / "unable to open database file":** the SQLite file must
+     live on the `dbdata` named volume, not the Windows bind mount (bind-mounted
+     SQLite has unreliable locking). This is configured via `DB_PATH=/dbdata/app.db`
+     in `docker-compose.yml`. If you see this, recreate so the volume mounts:
+     `docker compose down && docker compose up --build -d`.
    - **`better-sqlite3` / "invalid ELF header" / native binding error:** the
      host's `node_modules` leaked into the container. Rebuild clean:
      ```bash

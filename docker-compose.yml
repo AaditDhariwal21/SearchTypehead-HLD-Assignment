@@ -64,13 +64,21 @@ services:
       REDIS_NODE_1_PORT: 6379
       REDIS_NODE_2_HOST: redis-node-2
       REDIS_NODE_2_PORT: 6379
+      # Keep the SQLite file OFF the bind mount (Windows/Mac bind mounts have
+      # unreliable locking -> intermittent SQLITE_CANTOPEN). Point it at the
+      # dbdata named volume mounted below.
+      DB_PATH: /dbdata/app.db
     volumes:
-      # Bind mount your local source so edits are picked up live (nodemon).
+      # Bind mount your local source so edits are picked up live (nodemon). The
+      # ORCAS input file (server/data/orcas.tsv.gz) is read through here too.
       - ./server:/app
       # Anonymous volume that SHADOWS node_modules: keeps the container's
       # Linux-built modules (correct better-sqlite3 binary) instead of letting the
       # host's Windows node_modules overwrite them via the bind mount above.
       - /app/node_modules
+      # Named volume on a real Linux filesystem for the SQLite DB — reliable
+      # locking + persists across restarts (survives `down`, wiped by `down -v`).
+      - dbdata:/dbdata
     depends_on:
       redis-node-0: { condition: service_healthy }
       redis-node-1: { condition: service_healthy }
@@ -80,3 +88,7 @@ services:
 networks:
   cache-net:
     driver: bridge
+
+volumes:
+  # SQLite DB file, on a Linux-backed named volume (see backend service above).
+  dbdata:

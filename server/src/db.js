@@ -11,14 +11,17 @@ import { dirname, join } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// DB file lives under server/data/.
+// DB path is configurable via DB_PATH. WHY: under Docker Desktop on Windows/Mac,
+// a SQLite file on a BIND MOUNT gets unreliable file locking (the gRPC-FUSE /
+// virtiofs layer doesn't fully support the POSIX locks SQLite needs), causing
+// intermittent SQLITE_CANTOPEN / IOERR. So in Docker we set DB_PATH to a NAMED
+// VOLUME (a real Linux filesystem); locally it defaults to server/data/app.db.
 const DATA_DIR = join(__dirname, '..', 'data');
-const DB_PATH = join(DATA_DIR, 'app.db');
+const DB_PATH = process.env.DB_PATH || join(DATA_DIR, 'app.db');
 
-// better-sqlite3 will NOT create missing parent directories — if data/ doesn't
-// exist it fails with SQLITE_CANTOPEN. Ensure it exists first (idempotent), so a
-// fresh checkout or a container with no data/ folder just works.
-mkdirSync(DATA_DIR, { recursive: true });
+// better-sqlite3 will NOT create missing parent directories — if the target dir
+// doesn't exist it fails with SQLITE_CANTOPEN. Ensure it exists first (idempotent).
+mkdirSync(dirname(DB_PATH), { recursive: true });
 
 const db = new Database(DB_PATH);
 
