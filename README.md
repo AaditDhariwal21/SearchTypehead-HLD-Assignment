@@ -135,14 +135,24 @@ invalidated across the nodes that own them.
 
 ### Option A — Docker (backend + Redis) + local frontend (recommended)
 
+**Prerequisites:** Docker Desktop running, and the ORCAS dataset downloaded to
+`server/data/orcas.tsv.gz` (~330 MB — see [Dataset](#dataset-source--loading)).
+The dataset is **not** committed, so this download is required before `seed`.
+
 ```bash
-# 1. Backend + 3 Redis nodes (run from repo root)
+# 0. Download the dataset FIRST -> server/data/orcas.tsv.gz (~330 MB)
+#    https://msmarco.z22.web.core.windows.net/msmarcoranking/orcas.tsv.gz
+
+# 1. Backend + 3 Redis nodes — ONE command, detached (run from repo root)
 docker compose up --build -d
 
-# 2. Seed the database inside the backend container (once)
+# 2. Verify all four containers are actually "Up" before seeding
+docker compose ps        # backend = Up; the 3 redis = Up (healthy)
+
+# 3. Seed the database inside the backend container (once)
 docker compose exec backend npm run seed
 
-# 3. Frontend on your laptop
+# 4. Frontend on your laptop
 cd client && npm install && npm run dev
 ```
 Open the Vite URL (usually <http://localhost:5173>). The frontend proxies API
@@ -150,6 +160,17 @@ calls to the backend on port 3001.
 
 Stop with `docker compose down` (sends SIGTERM → final buffer flush, so no
 in-flight search counts are lost).
+
+> **Run the single combined command in step 1** (`docker compose up --build -d`),
+> not `docker compose build` followed by a separate `docker compose up`.
+>
+> **Windows / PowerShell note:** Docker Compose prints its progress (`Starting`,
+> `Started`, `Healthy`) to **stderr**, and PowerShell renders stderr as **red text**
+> wrapped in `NativeCommandError`. This is **not** an error — look for the
+> `Started` / `Healthy` lines. Don't Ctrl-C it: interrupting `up` leaves containers
+> in `Created` (not `Up`) state, and the next `docker compose exec backend ...` then
+> fails with **`service "backend" is not running`**. If that happens, just run
+> `docker compose up -d` again (or `docker compose ps` to confirm state) and retry.
 
 ### Option B — Everything local, no Docker
 

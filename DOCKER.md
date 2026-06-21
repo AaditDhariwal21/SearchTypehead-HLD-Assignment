@@ -91,5 +91,13 @@ which is the backend's published port — no frontend change needed.
    - **Edits not picked up:** the dev command uses `nodemon --legacy-watch`
      (polling) because Docker Desktop on Windows doesn't forward file events over
      bind mounts. If it still misses changes, `docker compose restart backend`.
+   - **`service "backend" is not running` on `exec`:** the container exists but is
+     in `Created` (not `Up`) state — usually because an earlier `docker compose up`
+     was interrupted. On Windows/PowerShell this is easy to do by accident: Compose
+     prints progress to **stderr**, which PowerShell shows as **red text** wrapped in
+     `NativeCommandError` — that is *not* an error (look for `Started` / `Healthy`).
+     Don't Ctrl-C it. Fix: `docker compose up -d` to finish starting, confirm with
+     `docker compose ps` (backend `Up`, redis `Up (healthy)`), then re-run the
+     `exec`. Always start with the single combined `docker compose up --build -d`.
    - **Docker engine not running:** "cannot connect to the Docker daemon" — open
      Docker Desktop and wait for the whale icon to settle.
