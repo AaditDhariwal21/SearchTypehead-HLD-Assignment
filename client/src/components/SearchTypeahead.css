@@ -1,0 +1,123 @@
+.typeahead {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+}
+
+.typeahead__modes {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.6rem;
+}
+
+.typeahead__mode {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.typeahead__mode--active {
+  color: #fff;
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.typeahead__row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.typeahead__input {
+  flex: 1;
+  box-sizing: border-box;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  border: 1px solid #cbd2d9;
+  border-radius: 8px;
+  outline: none;
+}
+
+.typeahead__button {
+  flex-shrink: 0;
+  padding: 0 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  background: #3b82f6;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.typeahead__button:hover {
+  background: #2563eb;
+}
+
+.typeahead__message {
+  margin-top: 0.75rem;
+  color: #334155;
+  font-size: 0.95rem;
+}
+
+.typeahead__input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.typeahead__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.typeahead__status {
+  padding: 0.75rem 1rem;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.typeahead__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.typeahead__item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+}
+
+/* Highlighted via keyboard OR hover — same visual so both input modes agree. */
+.typeahead__item--active {
+  background: #eff6ff;
+}
+
+.typeahead__term {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.typeahead__count {
+  flex-shrink: 0;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}

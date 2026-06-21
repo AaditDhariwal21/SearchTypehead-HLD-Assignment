@@ -1,0 +1,82 @@
+# Orchestrates the backend + 3 Redis "cache nodes" on a shared network.
+# The Vite frontend is intentionally NOT here — keep running it on your laptop
+# with `npm run dev`; it talks to the backend's exposed port 3001.
+#
+#   docker compose up --build      start everything (build backend image first)
+#   docker compose down            stop & remove containers
+#   docker compose logs -f backend follow backend logs
+
+services:
+  # --- 3 Redis instances, one per simulated cache node -----------------------
+  # Each listens on 6379 INSIDE its container; we publish them on different HOST
+  # ports (6379/6380/6381) so you can also poke them from your laptop with
+  # redis-cli. Persistence is disabled — it's a cache, meant to be ephemeral.
+  redis-node-0:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    networks: [cache-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-node-1:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6380:6379"
+    networks: [cache-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis-node-2:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6381:6379"
+    networks: [cache-net]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- backend ---------------------------------------------------------------
+  backend:
+    build: ./server
+    ports:
+      - "3001:3001"
+    # Config via env (NOT hardcoded). Inside the network the backend reaches each
+    # Redis by SERVICE NAME on its internal port 6379 — never localhost. The same
+    # code, run with `npm run dev` on your laptop, falls back to the localhost
+    # defaults baked into redisClients.js.
+    environment:
+      PORT: 3001
+      REDIS_NODE_0_HOST: redis-node-0
+      REDIS_NODE_0_PORT: 6379
+      REDIS_NODE_1_HOST: redis-node-1
+      REDIS_NODE_1_PORT: 6379
+      REDIS_NODE_2_HOST: redis-node-2
+      REDIS_NODE_2_PORT: 6379
+    volumes:
+      # Bind mount your local source so edits are picked up live (nodemon).
+      - ./server:/app
+      # Anonymous volume that SHADOWS node_modules: keeps the container's
+      # Linux-built modules (correct better-sqlite3 binary) instead of letting the
+      # host's Windows node_modules overwrite them via the bind mount above.
+      - /app/node_modules
+    depends_on:
+      redis-node-0: { condition: service_healthy }
+      redis-node-1: { condition: service_healthy }
+      redis-node-2: { condition: service_healthy }
+    networks: [cache-net]
+
+networks:
+  cache-net:
+    driver: bridge

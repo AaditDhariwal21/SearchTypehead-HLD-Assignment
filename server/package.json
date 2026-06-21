@@ -1,0 +1,19 @@
+{
+  "name": "search-typeahead-server",
+  "version": "1.0.0",
+  "description": "Search typeahead backend — Express + SQLite (better-sqlite3)",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "dev:docker": "nodemon --legacy-watch src/index.js",
+    "seed": "node scripts/seed.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "express": "^4.21.2",
+    "ioredis": "^5.11.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  }
+}

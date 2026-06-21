@@ -1,0 +1,2 @@
+# Place the seed CSV here as queries.csv  (columns: query,count)
+# This folder is tracked; the CSV itself and the generated app.db are gitignored.

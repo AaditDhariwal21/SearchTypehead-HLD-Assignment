@@ -1,0 +1,13 @@
+# Never copy the HOST node_modules into the image — it contains a better-sqlite3
+# binary built for the host OS (Windows), which would be wrong for the Linux
+# container. Dependencies are installed fresh inside the image instead.
+node_modules
+
+# Generated SQLite files — the DB is seeded/persisted via the data bind mount.
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+npm-debug.log
+Dockerfile
+.dockerignore

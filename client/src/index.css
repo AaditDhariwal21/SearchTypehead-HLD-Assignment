@@ -1,0 +1,21 @@
+:root {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: #1a1a1a;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #f8fafc;
+}
+
+.page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+.page h1 {
+  font-size: 1.5rem;
+  margin-bottom: 1.25rem;
+}
